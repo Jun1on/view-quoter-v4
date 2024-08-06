@@ -4,11 +4,13 @@ pragma solidity 0.8.26;
 import {IQuoter} from "./interfaces/IQuoter.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {QuoterMath} from "./libraries/QuoterMath.sol";
+import {console} from "lib/forge-std/src/console.sol";
 
 contract Quoter is IQuoter {
-    address public immutable poolManager;
+    IPoolManager public immutable poolManager;
 
-    constructor(address _poolManager) {
+    constructor(IPoolManager _poolManager) {
         poolManager = _poolManager;
     }
 
@@ -18,25 +20,9 @@ contract Quoter is IQuoter {
         override
         returns (uint256 amountReceived)
     {
-        int256 amount0;
-        int256 amount1;
-
-        bool zeroForOne = params.tokenIn < params.tokenOut;
-        IUniswapV3Pool pool = IUniswapV3Pool(params.pool);
-
-        // we need to pack a few variables to get under the stack limit
-        QuoterMath.QuoteParams memory quoteParams = QuoterMath.QuoteParams({
-            zeroForOne: zeroForOne,
-            fee: params.fee,
-            sqrtPriceLimitX96: params.sqrtPriceLimitX96 == 0
-                ? (zeroForOne ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1)
-                : params.sqrtPriceLimitX96,
-            exactInput: false
-        });
-
-        (amount0, amount1, sqrtPriceX96After, initializedTicksCrossed) =
-            QuoterMath.quote(pool, params.amountIn.toInt256(), quoteParams);
-
-        amountReceived = amount0 > 0 ? uint256(-amount1) : uint256(-amount0);
+        (int256 amount0, int256 amount1, uint160 sqrtPriceAfterX96, uint32 initializedTicksCrossed) =
+            QuoterMath.quote(poolManager, poolKey, swapParams);
+        console.log(amount0);
+        return 0;
     }
 }

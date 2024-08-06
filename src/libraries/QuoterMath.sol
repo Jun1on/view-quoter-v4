@@ -1,27 +1,24 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-pragma solidity ^0.7.6;
-pragma abicoder v2;
+pragma solidity 0.8.26;
 
-import {IUniswapV3Pool} from "v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import {IQuoter} from "../interfaces/IQuoter.sol";
-import {SwapMath} from "v3-core/contracts/libraries/SwapMath.sol";
-import {FullMath} from "v3-core/contracts/libraries/FullMath.sol";
-import {TickMath} from "v3-core/contracts/libraries/TickMath.sol";
-import "v3-core/contracts/libraries/LowGasSafeMath.sol";
-import "v3-core/contracts/libraries/SafeCast.sol";
-import "v3-periphery/contracts/libraries/Path.sol";
-import {SqrtPriceMath} from "v3-core/contracts/libraries/SqrtPriceMath.sol";
-import {LiquidityMath} from "v3-core/contracts/libraries/LiquidityMath.sol";
+import {SwapMath} from "@uniswap/v4-core/src/libraries/SwapMath.sol";
+import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import "@uniswap/v4-core/src/libraries/SafeCast.sol";
+import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
+import {LiquidityMath} from "@uniswap/v4-core/src/libraries/LiquidityMath.sol";
 import {PoolTickBitmap} from "./PoolTickBitmap.sol";
-import {PoolAddress} from "./PoolAddress.sol";
 import {Slot0, Slot0Library} from "@uniswap/v4-core/src/types/Slot0.sol";
-import {StateLibrary} from "lib/v4-core/src/libraries/StateLibrary.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+
+import {console} from "@uniswap/v4-core/lib/forge-gas-snapshot/lib/forge-std/src/console.sol";
 
 library QuoterMath {
-    using LowGasSafeMath for uint256;
-    using LowGasSafeMath for int256;
     using SafeCast for uint256;
     using SafeCast for int256;
 
@@ -29,7 +26,7 @@ library QuoterMath {
     using StateLibrary for IPoolManager;
     using PoolIdLibrary for PoolKey;
 
-    struct Slot0 {
+    struct Slot0Struct {
         // the current price
         uint160 sqrtPriceX96;
         // the current tick
@@ -46,8 +43,12 @@ library QuoterMath {
         uint160 sqrtPriceLimitX96;
     }
 
-    function fillSlot0(PoolKey calldata poolKey) private view returns (Slot0 memory slot0) {
-        (slot0.sqrtPriceX96, slot0.tick,,) = poolManager.getSlot0();
+    function fillSlot0(IPoolManager poolManager, PoolKey calldata poolKey)
+        private
+        view
+        returns (Slot0Struct memory slot0)
+    {
+        (slot0.sqrtPriceX96, slot0.tick,,) = poolManager.getSlot0(poolKey.toId());
         slot0.tickSpacing = poolKey.tickSpacing;
         return slot0;
     }
@@ -104,17 +105,17 @@ library QuoterMath {
 
     /// @notice TODO
     // (IUniswapV3Pool pool, int256 amount, QuoteParams memory quoteParams)
-    function quote(PoolKey calldata poolKey, IPoolManager.SwapParams calldata swapParams)
+    function quote(IPoolManager poolManager, PoolKey calldata poolKey, IPoolManager.SwapParams calldata swapParams)
         internal
         view
         returns (int256 amount0, int256 amount1, uint160 sqrtPriceAfterX96, uint32 initializedTicksCrossed)
     {
         QuoteParams memory quoteParams = QuoteParams(
-            swapParams.zeroForOne, swapParams.amountSpecified > 0, swapParams.fee, swapParams.sqrtPriceLimitX96
+            swapParams.zeroForOne, swapParams.amountSpecified > 0, poolKey.fee, swapParams.sqrtPriceLimitX96
         );
         initializedTicksCrossed = 1;
 
-        Slot0 memory slot0 = fillSlot0(poolKey);
+        Slot0Struct memory slot0 = fillSlot0(poolManager, poolKey);
 
         SwapState memory state = SwapState({
             amountSpecifiedRemaining: swapParams.amountSpecified,
@@ -132,7 +133,7 @@ library QuoterMath {
             step.sqrtPriceStartX96 = state.sqrtPriceX96;
 
             (step.tickNext, step.initialized) = PoolTickBitmap.nextInitializedTickWithinOneWord(
-                pool, slot0.tickSpacing, state.tick, quoteParams.zeroForOne
+                poolManager, poolKey.toId(), slot0.tickSpacing, state.tick, quoteParams.zeroForOne
             );
 
             // ensure that we do not overshoot the min/max tick, as the tick bitmap is not aware of these bounds
@@ -143,7 +144,7 @@ library QuoterMath {
             }
 
             // get the price for the next tick
-            step.sqrtPriceNextX96 = TickMath.getSqrtRatioAtTick(step.tickNext);
+            step.sqrtPriceNextX96 = TickMath.getSqrtPriceAtTick(step.tickNext);
 
             // compute values to swap to the target tick, price limit, or point where input/output amount is exhausted
             (state.sqrtPriceX96, step.amountIn, step.amountOut, step.feeAmount) = SwapMath.computeSwapStep(
@@ -160,17 +161,20 @@ library QuoterMath {
 
             if (quoteParams.exactInput) {
                 state.amountSpecifiedRemaining -= (step.amountIn + step.feeAmount).toInt256();
-                state.amountCalculated = state.amountCalculated.sub(step.amountOut.toInt256());
+                state.amountCalculated -= -step.amountOut.toInt256();
             } else {
                 state.amountSpecifiedRemaining += step.amountOut.toInt256();
-                state.amountCalculated = state.amountCalculated.add((step.amountIn + step.feeAmount).toInt256());
+                state.amountCalculated += (step.amountIn + step.feeAmount).toInt256();
             }
+
+            console.log("ok");
 
             // shift tick if we reached the next price
             if (state.sqrtPriceX96 == step.sqrtPriceNextX96) {
+                console.log("yah");
                 // if the tick is initialized, run the tick transition
                 if (step.initialized) {
-                    (, int128 liquidityNet,,,,,,) = pool.ticks(step.tickNext);
+                    (, int128 liquidityNet,,) = poolManager.getTickInfo(poolKey.toId(), step.tickNext);
 
                     // if we're moving leftward, we interpret liquidityNet as the opposite sign
                     // safe because liquidityNet cannot be type(int128).min
@@ -183,14 +187,17 @@ library QuoterMath {
 
                 state.tick = quoteParams.zeroForOne ? step.tickNext - 1 : step.tickNext;
             } else if (state.sqrtPriceX96 != step.sqrtPriceStartX96) {
+                console.log("nah");
                 // recompute unless we're on a lower tick boundary (i.e. already transitioned ticks), and haven't moved
-                state.tick = TickMath.getTickAtSqrtRatio(state.sqrtPriceX96);
+                state.tick = TickMath.getTickAtSqrtPrice(state.sqrtPriceX96);
             }
+
+            console.log(initializedTicksCrossed);
         }
 
         (amount0, amount1) = quoteParams.zeroForOne == quoteParams.exactInput
-            ? (amount - state.amountSpecifiedRemaining, state.amountCalculated)
-            : (state.amountCalculated, amount - state.amountSpecifiedRemaining);
+            ? (swapParams.amountSpecified - state.amountSpecifiedRemaining, state.amountCalculated)
+            : (state.amountCalculated, swapParams.amountSpecified - state.amountSpecifiedRemaining);
 
         sqrtPriceAfterX96 = state.sqrtPriceX96;
     }

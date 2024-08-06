@@ -1,6 +1,10 @@
 [profile.default]
-src = "src"
-out = "out"
-libs = ["lib"]
+out = 'foundry-out'
+solc_version = '0.8.26'
+optimizer_runs = 1000000
+ffi = true
+evm_version = "cancun"
+gas_limit = "3000000000"
+fuzz_runs = 10000
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

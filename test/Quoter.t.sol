@@ -33,18 +33,17 @@ contract QuoterTest is Test, Deployers {
         token0.approve(address(router), type(uint256).max);
         token1.approve(address(router), type(uint256).max);
 
-        (key, id) = initPoolAndAddLiquidity(currency0, currency1, IHooks(address(0)), 3000, SQRT_PRICE_1_1, ZERO_BYTES);
+        (key, id) = initPoolAndAddLiquidity(currency0, currency1, IHooks(address(0)), 100, SQRT_PRICE_1_1, ZERO_BYTES);
 
         quoter = new Quoter(manager);
     }
 
     function testQuote() public {
         bool zeroForOne = true;
-        int256 amount = 1 ether;
+        int256 amount = -0.00001 ether;
         uint160 sqrtPriceLimitX96 = zeroForOne ? MIN_PRICE_LIMIT : MAX_PRICE_LIMIT;
 
-        quoter.quoteExactInputSingle(key, IPoolManager.SwapParams(zeroForOne, 1, sqrtPriceLimitX96));
-        return;
+        quoter.quoteExactInputSingle(key, IPoolManager.SwapParams(zeroForOne, amount, sqrtPriceLimitX96));
         BalanceDelta swapDelta = swap(key, zeroForOne, amount, ZERO_BYTES);
         console.logInt(swapDelta.amount0());
         console.logInt(swapDelta.amount1());

@@ -103,22 +103,31 @@ library QuoterMath {
         uint256 feeAmount;
     }
 
-    /// @notice TODO
+    /// @notice Utility function called by the quote functions to
+    /// calculate the amounts in/out for a v3 swap
+    /// param pool the Uniswap v3 pool interface
+    /// param amount the input amount calculated
+    /// param quoteParams a packed dataset of flags/inputs used to get around stack limit
+    /// return amount0 the amount of token0 sent in or out of the pool
+    /// return amount1 the amount of token1 sent in or out of the pool
+    /// return sqrtPriceAfterX96 the price of the pool after the swap
+    /// return initializedTicksCrossed the number of initialized ticks LOADED IN
     // (IUniswapV3Pool pool, int256 amount, QuoteParams memory quoteParams)
-    function quote(IPoolManager poolManager, PoolKey calldata poolKey, IPoolManager.SwapParams calldata swapParams)
+    function quote(IPoolManager poolManager, PoolKey calldata poolKey, IPoolManager.SwapParams memory swapParams)
         internal
         view
         returns (int256 amount0, int256 amount1, uint160 sqrtPriceAfterX96, uint32 initializedTicksCrossed)
     {
-        QuoteParams memory quoteParams = QuoteParams(
-            swapParams.zeroForOne, swapParams.amountSpecified > 0, poolKey.fee, swapParams.sqrtPriceLimitX96
-        );
+        int256 amount = -swapParams.amountSpecified;
+        QuoteParams memory quoteParams =
+            QuoteParams(swapParams.zeroForOne, amount > 0, poolKey.fee, swapParams.sqrtPriceLimitX96);
+        quoteParams.exactInput = amount > 0;
         initializedTicksCrossed = 1;
 
         Slot0Struct memory slot0 = fillSlot0(poolManager, poolKey);
 
         SwapState memory state = SwapState({
-            amountSpecifiedRemaining: swapParams.amountSpecified,
+            amountSpecifiedRemaining: amount,
             amountCalculated: 0,
             sqrtPriceX96: slot0.sqrtPriceX96,
             tick: slot0.tick,
@@ -161,17 +170,14 @@ library QuoterMath {
 
             if (quoteParams.exactInput) {
                 state.amountSpecifiedRemaining -= (step.amountIn + step.feeAmount).toInt256();
-                state.amountCalculated -= -step.amountOut.toInt256();
+                state.amountCalculated = state.amountCalculated - step.amountOut.toInt256();
             } else {
                 state.amountSpecifiedRemaining += step.amountOut.toInt256();
-                state.amountCalculated += (step.amountIn + step.feeAmount).toInt256();
+                state.amountCalculated = state.amountCalculated + (step.amountIn + step.feeAmount).toInt256();
             }
-
-            console.log("ok");
 
             // shift tick if we reached the next price
             if (state.sqrtPriceX96 == step.sqrtPriceNextX96) {
-                console.log("yah");
                 // if the tick is initialized, run the tick transition
                 if (step.initialized) {
                     (, int128 liquidityNet,,) = poolManager.getTickInfo(poolKey.toId(), step.tickNext);
@@ -187,18 +193,15 @@ library QuoterMath {
 
                 state.tick = quoteParams.zeroForOne ? step.tickNext - 1 : step.tickNext;
             } else if (state.sqrtPriceX96 != step.sqrtPriceStartX96) {
-                console.log("nah");
                 // recompute unless we're on a lower tick boundary (i.e. already transitioned ticks), and haven't moved
                 state.tick = TickMath.getTickAtSqrtPrice(state.sqrtPriceX96);
             }
 
-            console.log(initializedTicksCrossed);
+            (amount0, amount1) = quoteParams.zeroForOne == quoteParams.exactInput
+                ? (amount - state.amountSpecifiedRemaining, state.amountCalculated)
+                : (state.amountCalculated, amount - state.amountSpecifiedRemaining);
+
+            sqrtPriceAfterX96 = state.sqrtPriceX96;
         }
-
-        (amount0, amount1) = quoteParams.zeroForOne == quoteParams.exactInput
-            ? (swapParams.amountSpecified - state.amountSpecifiedRemaining, state.amountCalculated)
-            : (state.amountCalculated, swapParams.amountSpecified - state.amountSpecifiedRemaining);
-
-        sqrtPriceAfterX96 = state.sqrtPriceX96;
     }
 }

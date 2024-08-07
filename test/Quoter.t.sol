@@ -51,7 +51,7 @@ contract QuoterTest is Test, Deployers {
     }
 
     function testLargeQuote() public {
-        (int256 amount0, int256 amount1,, uint32 initializedTicksCrossed) = _quote(true, 1 ether);
+        (,,, uint32 initializedTicksCrossed) = _quote(true, 1 ether);
         assertEq(initializedTicksCrossed, 2);
         // (int256 secondAmount0, int256 secondAmount1,, uint32 secondInitializedTicksCrossed) = _quote(true, -1 ether);
         // assertEq(secondInitializedTicksCrossed, 2);

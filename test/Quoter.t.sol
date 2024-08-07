@@ -13,8 +13,12 @@ import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {IHooks} from "lib/v4-core/src/interfaces/IHooks.sol";
 import {BalanceDelta} from "lib/v4-core/src/types/BalanceDelta.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 
 contract QuoterTest is Test, Deployers {
+    using PoolIdLibrary for PoolKey;
+    using StateLibrary for IPoolManager;
+
     Quoter public quoter;
     HookEnabledSwapRouter router;
     TestERC20 token0;
@@ -39,13 +43,21 @@ contract QuoterTest is Test, Deployers {
     }
 
     function testQuote() public {
-        bool zeroForOne = true;
-        int256 amount = -0.00001 ether;
-        uint160 sqrtPriceLimitX96 = zeroForOne ? MIN_PRICE_LIMIT : MAX_PRICE_LIMIT;
+        _quote(true, 0.001 ether);
+        _quote(true, -0.001 ether);
+        _quote(false, 0.001 ether);
+        _quote(false, -0.001 ether);
+    }
 
-        quoter.quoteExactInputSingle(key, IPoolManager.SwapParams(zeroForOne, amount, sqrtPriceLimitX96));
+    function _quote(bool zeroForOne, int256 amount) internal {
+        uint160 sqrtPriceLimitX96 = zeroForOne ? MIN_PRICE_LIMIT : MAX_PRICE_LIMIT;
+        (int256 amount0, int256 amount1, uint160 sqrtPriceAfterX96, uint32 initializedTicksCrossed) =
+            quoter.quoteExactInputSingle(key, IPoolManager.SwapParams(zeroForOne, amount, sqrtPriceLimitX96));
         BalanceDelta swapDelta = swap(key, zeroForOne, amount, ZERO_BYTES);
-        console.logInt(swapDelta.amount0());
-        console.logInt(swapDelta.amount1());
+        (uint160 realSqrtPriceX96,,,) = manager.getSlot0(id);
+        assertEq(swapDelta.amount0(), amount0);
+        assertEq(swapDelta.amount1(), amount1);
+        assertEq(sqrtPriceAfterX96, realSqrtPriceX96);
+        assertEq(initializedTicksCrossed, 1);
     }
 }

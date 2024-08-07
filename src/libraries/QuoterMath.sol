@@ -16,8 +16,6 @@ import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
-import {console} from "@uniswap/v4-core/lib/forge-gas-snapshot/lib/forge-std/src/console.sol";
-
 library QuoterMath {
     using SafeCast for uint256;
     using SafeCast for int256;
@@ -113,21 +111,20 @@ library QuoterMath {
     /// return sqrtPriceAfterX96 the price of the pool after the swap
     /// return initializedTicksCrossed the number of initialized ticks LOADED IN
     // (IUniswapV3Pool pool, int256 amount, QuoteParams memory quoteParams)
-    function quote(IPoolManager poolManager, PoolKey calldata poolKey, IPoolManager.SwapParams memory swapParams)
+    function quote(IPoolManager poolManager, PoolKey calldata poolKey, IPoolManager.SwapParams calldata swapParams)
         internal
         view
         returns (int256 amount0, int256 amount1, uint160 sqrtPriceAfterX96, uint32 initializedTicksCrossed)
     {
-        int256 amount = -swapParams.amountSpecified;
-        QuoteParams memory quoteParams =
-            QuoteParams(swapParams.zeroForOne, amount > 0, poolKey.fee, swapParams.sqrtPriceLimitX96);
-        quoteParams.exactInput = amount > 0;
+        QuoteParams memory quoteParams = QuoteParams(
+            swapParams.zeroForOne, swapParams.amountSpecified < 0, poolKey.fee, swapParams.sqrtPriceLimitX96
+        );
         initializedTicksCrossed = 1;
 
         Slot0Struct memory slot0 = fillSlot0(poolManager, poolKey);
 
         SwapState memory state = SwapState({
-            amountSpecifiedRemaining: amount,
+            amountSpecifiedRemaining: -swapParams.amountSpecified,
             amountCalculated: 0,
             sqrtPriceX96: slot0.sqrtPriceX96,
             tick: slot0.tick,
@@ -136,7 +133,12 @@ library QuoterMath {
             liquidity: poolManager.getLiquidity(poolKey.toId())
         });
 
-        while (state.amountSpecifiedRemaining != 0 && state.sqrtPriceX96 != quoteParams.sqrtPriceLimitX96) {
+        uint256 i = 0;
+        while (state.amountSpecifiedRemaining != 0 && state.sqrtPriceX96 != quoteParams.sqrtPriceLimitX96 && i < 10) {
+            unchecked {
+                i++;
+            }
+
             StepComputations memory step;
 
             step.sqrtPriceStartX96 = state.sqrtPriceX96;
@@ -164,16 +166,16 @@ library QuoterMath {
                         : step.sqrtPriceNextX96 > quoteParams.sqrtPriceLimitX96
                 ) ? quoteParams.sqrtPriceLimitX96 : step.sqrtPriceNextX96,
                 state.liquidity,
-                state.amountSpecifiedRemaining,
+                -state.amountSpecifiedRemaining,
                 quoteParams.fee
             );
 
             if (quoteParams.exactInput) {
                 state.amountSpecifiedRemaining -= (step.amountIn + step.feeAmount).toInt256();
-                state.amountCalculated = state.amountCalculated - step.amountOut.toInt256();
+                state.amountCalculated = state.amountCalculated + step.amountOut.toInt256();
             } else {
                 state.amountSpecifiedRemaining += step.amountOut.toInt256();
-                state.amountCalculated = state.amountCalculated + (step.amountIn + step.feeAmount).toInt256();
+                state.amountCalculated = state.amountCalculated - (step.amountIn + step.feeAmount).toInt256();
             }
 
             // shift tick if we reached the next price
@@ -198,8 +200,8 @@ library QuoterMath {
             }
 
             (amount0, amount1) = quoteParams.zeroForOne == quoteParams.exactInput
-                ? (amount - state.amountSpecifiedRemaining, state.amountCalculated)
-                : (state.amountCalculated, amount - state.amountSpecifiedRemaining);
+                ? (state.amountSpecifiedRemaining + swapParams.amountSpecified, state.amountCalculated)
+                : (state.amountCalculated, state.amountSpecifiedRemaining + swapParams.amountSpecified);
 
             sqrtPriceAfterX96 = state.sqrtPriceX96;
         }

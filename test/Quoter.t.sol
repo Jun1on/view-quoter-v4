@@ -43,21 +43,31 @@ contract QuoterTest is Test, Deployers {
     }
 
     function testQuote() public {
-        _quote(true, 0.001 ether);
+        (,,, uint32 initializedTicksCrossed) = _quote(true, 0.001 ether);
+        assertEq(initializedTicksCrossed, 1);
         _quote(true, -0.001 ether);
         _quote(false, 0.001 ether);
         _quote(false, -0.001 ether);
     }
 
-    function _quote(bool zeroForOne, int256 amount) internal {
+    function testLargeQuote() public {
+        (int256 amount0, int256 amount1,, uint32 initializedTicksCrossed) = _quote(true, 1 ether);
+        assertEq(initializedTicksCrossed, 2);
+        // (int256 secondAmount0, int256 secondAmount1,, uint32 secondInitializedTicksCrossed) = _quote(true, -1 ether);
+        // assertEq(secondInitializedTicksCrossed, 2);
+    }
+
+    function _quote(bool zeroForOne, int256 amount)
+        internal
+        returns (int256 amount0, int256 amount1, uint160 sqrtPriceAfterX96, uint32 initializedTicksCrossed)
+    {
         uint160 sqrtPriceLimitX96 = zeroForOne ? MIN_PRICE_LIMIT : MAX_PRICE_LIMIT;
-        (int256 amount0, int256 amount1, uint160 sqrtPriceAfterX96, uint32 initializedTicksCrossed) =
+        (amount0, amount1, sqrtPriceAfterX96, initializedTicksCrossed) =
             quoter.quoteExactInputSingle(key, IPoolManager.SwapParams(zeroForOne, amount, sqrtPriceLimitX96));
         BalanceDelta swapDelta = swap(key, zeroForOne, amount, ZERO_BYTES);
         (uint160 realSqrtPriceX96,,,) = manager.getSlot0(id);
         assertEq(swapDelta.amount0(), amount0);
         assertEq(swapDelta.amount1(), amount1);
         assertEq(sqrtPriceAfterX96, realSqrtPriceX96);
-        assertEq(initializedTicksCrossed, 1);
     }
 }

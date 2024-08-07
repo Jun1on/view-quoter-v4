@@ -133,12 +133,7 @@ library QuoterMath {
             liquidity: poolManager.getLiquidity(poolKey.toId())
         });
 
-        uint256 i = 0;
-        while (state.amountSpecifiedRemaining != 0 && state.sqrtPriceX96 != quoteParams.sqrtPriceLimitX96 && i < 10) {
-            unchecked {
-                i++;
-            }
-
+        while (state.amountSpecifiedRemaining != 0 && state.sqrtPriceX96 != quoteParams.sqrtPriceLimitX96) {
             StepComputations memory step;
 
             step.sqrtPriceStartX96 = state.sqrtPriceX96;

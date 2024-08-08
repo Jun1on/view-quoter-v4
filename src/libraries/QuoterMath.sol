@@ -102,15 +102,14 @@ library QuoterMath {
     }
 
     /// @notice Utility function called by the quote functions to
-    /// calculate the amounts in/out for a v3 swap
-    /// param pool the Uniswap v3 pool interface
-    /// param amount the input amount calculated
-    /// param quoteParams a packed dataset of flags/inputs used to get around stack limit
-    /// return amount0 the amount of token0 sent in or out of the pool
-    /// return amount1 the amount of token1 sent in or out of the pool
-    /// return sqrtPriceAfterX96 the price of the pool after the swap
-    /// return initializedTicksCrossed the number of initialized ticks LOADED IN
-    // (IUniswapV3Pool pool, int256 amount, QuoteParams memory quoteParams)
+    /// calculate the amounts in/out for a hookless v4 swap
+    /// @param poolManager the Uniswap v4 pool manager
+    /// @param poolKey The poolKey identifying the pool traded against
+    /// @param swapParams The parameters used for the swap
+    /// @return amount0 the amount of token0 sent in or out of the pool
+    /// @return amount1 the amount of token1 sent in or out of the pool
+    /// @return sqrtPriceAfterX96 the price of the pool after the swap
+    /// @return initializedTicksCrossed the number of initialized ticks LOADED IN
     function quote(IPoolManager poolManager, PoolKey calldata poolKey, IPoolManager.SwapParams calldata swapParams)
         internal
         view

@@ -75,7 +75,7 @@ contract QuoterTest is Test, Deployers {
         assertEq(initializedTicksCrossed, 3);
         // the pool has no more liquidity for this quote
         (int256 amount0, int256 amount1, uint160 sqrtPriceAfterX96, uint32 initializedTicksCrossed2) =
-            quoter.quoteExactInputSingle(key, IPoolManager.SwapParams(false, -1 ether, MAX_PRICE_LIMIT));
+            quoter.quoteSingle(key, IPoolManager.SwapParams(false, -1 ether, MAX_PRICE_LIMIT));
         assertEq(amount0, 0);
         assertEq(amount1, 0);
         assertEq(sqrtPriceAfterX96, 0); // undefined behavior
@@ -148,7 +148,7 @@ contract QuoterTest is Test, Deployers {
     {
         uint160 sqrtPriceLimitX96 = zeroForOne ? MIN_PRICE_LIMIT : MAX_PRICE_LIMIT;
         (amount0, amount1, sqrtPriceAfterX96, initializedTicksCrossed) =
-            quoter.quoteExactInputSingle(key, IPoolManager.SwapParams(zeroForOne, amountSpecified, sqrtPriceLimitX96));
+            quoter.quoteSingle(key, IPoolManager.SwapParams(zeroForOne, amountSpecified, sqrtPriceLimitX96));
         if (amount0 == 0 && amount1 == 0) {
             // pool has no liquidity for this quote
             vm.expectRevert(); // PriceLimitAlreadyExceeded

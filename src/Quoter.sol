@@ -13,7 +13,7 @@ contract Quoter is IQuoter {
         poolManager = _poolManager;
     }
 
-    function quoteExactInputSingle(PoolKey calldata poolKey, IPoolManager.SwapParams calldata swapParams)
+    function quoteSingle(PoolKey calldata poolKey, IPoolManager.SwapParams calldata swapParams)
         public
         view
         override
